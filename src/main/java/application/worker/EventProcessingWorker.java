@@ -1,9 +1,11 @@
 package application.worker;
 
+import application.ports.ClassificationPolicy;
 import application.ports.EventClassifier;
 import application.ports.EventStore;
 import application.ports.QueuePublisher;
 import domain.ClassificationResponse;
+import domain.ClassificationResult;
 import domain.EventStatus;
 import domain.IncomingEvent;
 
@@ -21,11 +23,13 @@ public class EventProcessingWorker {
     private final EventStore eventStore;
     private final EventClassifier classifier;
     private final QueuePublisher queuePublisher;
+    private final ClassificationPolicy classificationPolicy;
 
-    public EventProcessingWorker(EventStore eventStore, EventClassifier classifier, QueuePublisher queuePublisher) {
+    public EventProcessingWorker(EventStore eventStore, EventClassifier classifier, QueuePublisher queuePublisher, ClassificationPolicy classificationPolicy) {
         this.eventStore = eventStore;
         this.classifier = classifier;
         this.queuePublisher = queuePublisher;
+        this.classificationPolicy = classificationPolicy;
     }
 
     /**
@@ -64,14 +68,27 @@ public class EventProcessingWorker {
         ClassificationResponse classificationResponse = classifier.classify(event.getPayloadJson());
 
         // 5. Successful classification
-        if (classificationResponse.isSuccess()) {
-            event.complete(classificationResponse.getResult());
+        if (classificationResponse.success()) {
+            ClassificationResult result = classificationResponse.result();
+
+            if(result == null) {
+                event.registerFailure(1); // forces FAILED state due to invalid response
+                eventStore.save(event);
+                return;
+            }
+            if(!classificationPolicy.isCategoryAllowed(result.category()) ||
+                    classificationPolicy.requiresHumanReview(result.confidence())) {
+                event.markForReview(result);
+                eventStore.save(event);
+                return;
+            }
+            event.complete(result);
             eventStore.save(event);
             return;
         }
 
         // 6. Temporary failure
-        if (classificationResponse.isTemporaryFailure()) {
+        if (classificationResponse.temporaryFailure()) {
             boolean retry = event.registerFailure(MAX_RETRIES);
             eventStore.save(event);
             if(retry) {
@@ -81,7 +98,7 @@ public class EventProcessingWorker {
             return;
         }
         // 7. Permanent failure (invalid response, unrecoverable error)
-        if (classificationResponse.isPermanentFailure()) {
+        if (classificationResponse.permanentFailure()) {
             event.registerFailure(1); // forces FAILED state
             eventStore.save(event);
         }

@@ -74,7 +74,8 @@ public class IncomingEvent {
      */
     public void startProcessing() {
         if (this.status == EventStatus.COMPLETED ||
-                this.status == EventStatus.FAILED) {
+                this.status == EventStatus.FAILED ||
+                this.status == EventStatus.REVIEW_REQUIRED) {
             throw new IllegalStateException("Cannot process terminal event");
         }
         status = EventStatus.PROCESSING;
@@ -85,7 +86,7 @@ public class IncomingEvent {
      * Complete the event with the classification result.
      * This method should only be called when the event is in PROCESSING status.
      * The status will be updated to COMPLETED after this method is called.
-     * @param result
+     * @param result the classification result to associate with the event
      */
     public void complete (ClassificationResult result) {
         if(result == null) {
@@ -100,13 +101,33 @@ public class IncomingEvent {
     }
 
     /**
+     * Mark the event for manual review when automatic classification should not be trusted.
+     * This stores the AI classification result for traceability and transitions the event to
+     * REVIEW_REQUIRED status.
+     *
+     * @param result classification output produced by the classifier
+     */
+    public void markForReview(ClassificationResult result) {
+        if(result == null) {
+            throw new IllegalArgumentException("The result cannot be null");
+        }
+        if (this.status != EventStatus.PROCESSING) {
+            throw new IllegalStateException("The status should be PROCESSING");
+        }
+        this.classification = result;
+        updatedAt = Instant.now();
+        this.status = EventStatus.REVIEW_REQUIRED;
+    }
+
+    /**
      * Register a failure for the event processing. This method should only be called when the event is in PROCESSING status.
      * The status will be updated to FAILED if the number of attempts exceeds the maxRetries.
      * The attempts count will be incremented by 1 after this method is called.
      * The status will remain PROCESSING if the number of attempts does not exceed the maxRetries.
      * The updatedAt timestamp will be updated to the current time after this method is called.
-     * @param maxRetries
-     * @return
+     * @param maxRetries the maximum number of retries allowed before marking the event as FAILED
+     *
+     * @return true if the event is marked as FAILED, false if the event remains in PROCESSING
      */
     public boolean registerFailure (int maxRetries) {
 

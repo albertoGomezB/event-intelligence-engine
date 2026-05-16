@@ -1,9 +1,11 @@
 package infra.config;
 
 import application.IngestEventService;
+import application.ports.ClassificationPolicy;
 import application.ports.EventStore;
 import application.ports.QueuePublisher;
 import infra.dynamodb.InMemoryEventStore;
+import infra.policy.BankingClassificationPolicy;
 import infra.sqs.InMemoryQueuePublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,5 +27,10 @@ public class AppConfig {
     public IngestEventService ingestEventService (EventStore eventStore,
                                                   QueuePublisher queuePublisher) {
         return new IngestEventService(eventStore, queuePublisher);
+    }
+
+    @Bean
+    public ClassificationPolicy classificationPolicy() {
+        return new BankingClassificationPolicy();
     }
 }
