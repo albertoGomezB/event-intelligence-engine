@@ -1,6 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { Construct } from 'constructs';
 
 export class InfraCdkStack extends cdk.Stack {
@@ -9,11 +12,22 @@ export class InfraCdkStack extends cdk.Stack {
 
     const appLogGroup = new logs.LogGroup(this, 'EventIntelligenceEngineLogGroup', {
       logGroupName: '/event-intelligence-engine/application',
-      retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // prod: RETAIN
+      retention: logs.RetentionDays.ONE_MONTH, // prod: THREE_MONTHS or more depending on policy
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // prod : RETAIN
     });
 
-    // 1) temporary failure (retries)
+    // Alarm Topic SNS
+    const alarmsTopic = new sns.Topic(this, 'EventIntelligenceAlarmsTopic', {
+      topicName: 'event-intelligence-alarms',
+    });
+
+    // Read optional alarm email from CDK context (use `cdk deploy -c alarmEmail=you@domain`)
+    const alarmEmail = this.node.tryGetContext('alarmEmail');
+    if (alarmEmail) {
+      alarmsTopic.addSubscription(new subscriptions.EmailSubscription(alarmEmail));
+    }
+
+    // CloudWatch Metrics Filters
     const temporaryFailureFilter = new logs.MetricFilter(this, 'EventTemporaryFailureMetricFilter', {
       logGroup: appLogGroup,
       metricNamespace: 'EventIntelligenceEngine',
@@ -23,7 +37,6 @@ export class InfraCdkStack extends cdk.Stack {
       defaultValue: 0,
     });
 
-    // 2) review required
     const reviewFilter = new logs.MetricFilter(this, 'EventReviewRequiredMetricFilter', {
       logGroup: appLogGroup,
       metricNamespace: 'EventIntelligenceEngine',
@@ -33,7 +46,6 @@ export class InfraCdkStack extends cdk.Stack {
       defaultValue: 0,
     });
 
-    // 3) permanent failure
     const permanentFailureFilter = new logs.MetricFilter(this, 'EventPermanentFailureMetricFilter', {
       logGroup: appLogGroup,
       metricNamespace: 'EventIntelligenceEngine',
@@ -43,8 +55,16 @@ export class InfraCdkStack extends cdk.Stack {
       defaultValue: 0,
     });
 
-    // Alarm: permanent failure detected every 5 minutes
-    new cloudwatch.Alarm(this, 'EventPermanentFailureAlarm', {
+    const completedFilter = new logs.MetricFilter(this, 'EventCompletedMetricFilter', {
+      logGroup: appLogGroup,
+      metricNamespace: 'EventIntelligenceEngine',
+      metricName: 'EventsCompleted',
+      filterPattern: logs.FilterPattern.literal('event_completed'),
+      metricValue: '1',
+      defaultValue: 0,
+    });
+
+    const permanentFailureAlarm = new cloudwatch.Alarm(this, 'EventPermanentFailureAlarm', {
       metric: permanentFailureFilter.metric({
         statistic: 'sum',
         period: cdk.Duration.minutes(5),
@@ -57,8 +77,7 @@ export class InfraCdkStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
-    // Alarm: too many permanent failures detected every 5 minutes (adjust threshold)
-    new cloudwatch.Alarm(this, 'EventReviewRequiredHighAlarm', {
+    const reviewRequiredHighAlarm = new cloudwatch.Alarm(this, 'EventReviewRequiredHighAlarm', {
       metric: reviewFilter.metric({
         statistic: 'sum',
         period: cdk.Duration.minutes(15),
@@ -71,64 +90,53 @@ export class InfraCdkStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
-    // Dashboard: Event Intelligence Engine
-    new cloudwatch.Dashboard(this, 'EventIntelligenceEngineDashboard', {
+    const reviewRateMetric = new cloudwatch.MathExpression({
+      expression: '100 * review / MAX([completed, 1])',
+      usingMetrics: {
+        review: reviewFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(15) }),
+        completed: completedFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(15) }),
+      },
+      label: 'ReviewRequiredRatePercent',
+    });
+
+    // Alarms
+    const reviewRateAlarm = new cloudwatch.Alarm(this, 'EventReviewRateHighAlarm', {
+      metric: reviewRateMetric,
+      threshold: 15, // example: >15%
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: 'High review-required rate compared to completed events',
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Connecting alarms to SNS topic
+    permanentFailureAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmsTopic));
+    reviewRequiredHighAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmsTopic));
+    reviewRateAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(alarmsTopic));
+
+    const dashboard = new cloudwatch.Dashboard(this, 'EventIntelligenceEngineDashboard', {
       dashboardName: 'EventIntelligenceEngine',
-    }).addWidgets(
+    });
+
+    // Adding widgets to the dashboard
+    dashboard.addWidgets(
       new cloudwatch.GraphWidget({
         title: 'Event Processing Status',
         left: [
-          temporaryFailureFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(5),
-            label: 'Temporary Failures (retries)',
-          }),
-          reviewFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(5),
-            label: 'Review Required',
-          }),
-          permanentFailureFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(5),
-            label: 'Permanent Failures',
-          }),
+          completedFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(5), label: 'Completed' }),
+          temporaryFailureFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(5), label: 'Temporary Failures' }),
+          reviewFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(5), label: 'Review Required' }),
+          permanentFailureFilter.metric({ statistic: 'sum', period: cdk.Duration.minutes(5), label: 'Permanent Failures' }),
         ],
         width: 12,
         height: 6,
       }),
-      new cloudwatch.SingleValueWidget({
-        title: 'Temporary Failures (Last 5 min)',
-        metrics: [
-          temporaryFailureFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(5),
-          }),
-        ],
-        width: 4,
-        height: 3,
-      }),
-      new cloudwatch.SingleValueWidget({
-        title: 'Review Required (Last 15 min)',
-        metrics: [
-          reviewFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(15),
-          }),
-        ],
-        width: 4,
-        height: 3,
-      }),
-      new cloudwatch.SingleValueWidget({
-        title: 'Permanent Failures (Last 5 min)',
-        metrics: [
-          permanentFailureFilter.metric({
-            statistic: 'sum',
-            period: cdk.Duration.minutes(5),
-          }),
-        ],
-        width: 4,
-        height: 3,
+      new cloudwatch.GraphWidget({
+        title: 'Review Rate % (15 min)',
+        left: [reviewRateMetric],
+        width: 12,
+        height: 6,
       }),
     );
   }
