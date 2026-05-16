@@ -28,22 +28,17 @@ public class IngestEventService {
         String eventId = UUID.randomUUID().toString();
         var now = Instant.now();
 
-       String resolvedCorrelationId = (correlationId == null || correlationId.isBlank())
-               ? eventId
-               : correlationId;
+        String resolvedCorrelationId = (correlationId == null || correlationId.isBlank())
+                ? eventId
+                : correlationId;
 
-        IncomingEvent event = new IncomingEvent(
+        IncomingEvent event = IncomingEvent.createNewEvent(
                 eventId,
                 resolvedCorrelationId,
                 source,
                 producer,
                 originalType,
-                payloadJson,
-                EventStatus.RECEIVED,
-                0,
-                now,
-                now,
-                null
+                payloadJson
         );
 
         eventStore.save(event);

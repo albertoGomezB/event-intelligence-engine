@@ -1,8 +1,8 @@
 package application.ports;
 
-import domain.ClassificationResult;
+import domain.ClassificationResponse;
 
 public interface EventClassifier {
 
-    ClassificationResult classify(String payloadJson);
+    ClassificationResponse classify(String payloadJson);
 }

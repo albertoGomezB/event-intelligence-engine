@@ -14,7 +14,7 @@ public class InMemoryEventStore implements EventStore {
 
     @Override
     public void save(IncomingEvent event) {
-        storage.put(event.eventId(), event);
+        storage.put(event.getEventId(), event);
     }
 
     @Override
@@ -24,6 +24,6 @@ public class InMemoryEventStore implements EventStore {
 
     @Override
     public void update(IncomingEvent event) {
-        storage.put(event.eventId(), event);
+        storage.put(event.getEventId(), event);
     }
 }
