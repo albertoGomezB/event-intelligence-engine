@@ -8,6 +8,8 @@ import domain.ClassificationResponse;
 import domain.ClassificationResult;
 import domain.EventStatus;
 import domain.IncomingEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
@@ -18,7 +20,8 @@ import java.util.Optional;
  */
 public class EventProcessingWorker {
 
-    private static final  int MAX_RETRIES = 3;
+    private static final int MAX_RETRIES = 3;
+    private static final Logger log = LoggerFactory.getLogger(EventProcessingWorker.class);
 
     private final EventStore eventStore;
     private final EventClassifier classifier;
@@ -40,7 +43,7 @@ public class EventProcessingWorker {
      * 2. Checking for idempotency (ignoring already completed or failed events).
      * 3. Transitioning the event to PROCESSING state before calling the AI classifier.
      * 4. Handling the AI classifier response:
-     *   - On success: transition to COMPLETED and save the result.
+     *   - On success: transition to COMPLETED or REVIEW_REQUIRED and save the result.
      *   - On temporary failure: register the failure, and if retries are available, re-queue the event for another attempt.
      *   - On permanent failure: transition to FAILED.
      */
@@ -49,6 +52,7 @@ public class EventProcessingWorker {
         // 1. Load event from persistence
         Optional<IncomingEvent> optionalEvent = eventStore.findById(eventId);
         if (optionalEvent.isEmpty()) {
+            log.warn("event_not_found eventId={}", eventId);
             return;
         }
         IncomingEvent event = optionalEvent.get();
@@ -56,13 +60,18 @@ public class EventProcessingWorker {
         // 2. Idempotency guard:
         // If event already reached a terminal state, ignore duplicated delivery.
         if (event.getStatus() == EventStatus.COMPLETED ||
-                event.getStatus() == EventStatus.FAILED) {
+                event.getStatus() == EventStatus.FAILED ||
+                event.getStatus() == EventStatus.REVIEW_REQUIRED) {
+            log.info("event_ignored_terminal_state eventId={} correlationId={} status={}",
+                    event.getEventId(), event.getCorrelationId(), event.getStatus());
             return;
         }
 
         // 3. Transition to PROCESSING before calling external dependency
         event.startProcessing();
         eventStore.save(event);
+        log.info("event_processing_started eventId={} correlationId={} attempts={} status={}",
+                event.getEventId(), event.getCorrelationId(), event.getAttempts(), event.getStatus());
 
         // 4. Call AI classifier (non-deterministic dependency)
         ClassificationResponse classificationResponse = classifier.classify(event.getPayloadJson());
@@ -70,20 +79,30 @@ public class EventProcessingWorker {
         // 5. Successful classification
         if (classificationResponse.success()) {
             ClassificationResult result = classificationResponse.result();
-
             if(result == null) {
-                event.registerFailure(1); // forces FAILED state due to invalid response
+                event.registerFailure(1);
                 eventStore.save(event);
+                log.error("event_invalid_classifier_response eventId={} correlationId={} " +
+                                "reason=SUCCESS_WITHOUT_RESULT status={}",
+                        event.getEventId(), event.getCorrelationId(), event.getStatus());
                 return;
             }
-            if(!classificationPolicy.isCategoryAllowed(result.category()) ||
-                    classificationPolicy.requiresHumanReview(result.confidence())) {
+            boolean categoryNotAllowed = !classificationPolicy.isCategoryAllowed(result.category());
+            boolean lowConfidence = classificationPolicy.requiresHumanReview(result.confidence());
+
+            if (categoryNotAllowed || lowConfidence) {
+                String reason = categoryNotAllowed ? "CATEGORY_NOT_ALLOWED" : "LOW_CONFIDENCE";
                 event.markForReview(result);
                 eventStore.save(event);
+                log.info("event_review_required eventId={} correlationId={} reason={} category={} confidence={} status={}",
+                        event.getEventId(), event.getCorrelationId(), reason, result.category(),
+                        result.confidence(), event.getStatus());
                 return;
             }
             event.complete(result);
             eventStore.save(event);
+            log.info("event_completed eventId={} correlationId={} category={} confidence={} status={}",
+                    event.getEventId(), event.getCorrelationId(), result.category(), result.confidence(), event.getStatus());
             return;
         }
 
@@ -91,16 +110,21 @@ public class EventProcessingWorker {
         if (classificationResponse.temporaryFailure()) {
             boolean retry = event.registerFailure(MAX_RETRIES);
             eventStore.save(event);
+            log.warn("event_temporary_failure eventId={} correlationId={} attempts={} willRetry={} error={}",
+                    event.getEventId(), event.getCorrelationId(), event.getAttempts(), retry,
+                    classificationResponse.errorMessage());
             if(retry) {
-                // Re-queue event for another processing attempt
                 queuePublisher.publishEventId(eventId);
             }
             return;
         }
         // 7. Permanent failure (invalid response, unrecoverable error)
         if (classificationResponse.permanentFailure()) {
-            event.registerFailure(1); // forces FAILED state
+            event.registerFailure(1);
             eventStore.save(event);
+            log.error("event_permanent_failure eventId={} correlationId={} attempts={} error={} status={}",
+                    event.getEventId(), event.getCorrelationId(), event.getAttempts(),
+                    classificationResponse.errorMessage(), event.getStatus());
         }
     }
 }

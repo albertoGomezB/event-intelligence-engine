@@ -2,13 +2,15 @@ package application;
 
 import application.ports.EventStore;
 import application.ports.QueuePublisher;
-import domain.EventStatus;
 import domain.IncomingEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
 import java.util.UUID;
 
 public class IngestEventService {
+
+    private static final Logger log = LoggerFactory.getLogger(IngestEventService.class);
 
     private final EventStore eventStore;
     private final QueuePublisher queuePublisher;
@@ -26,7 +28,6 @@ public class IngestEventService {
     ) {
 
         String eventId = UUID.randomUUID().toString();
-        var now = Instant.now();
 
         String resolvedCorrelationId = (correlationId == null || correlationId.isBlank())
                 ? eventId
@@ -43,6 +44,14 @@ public class IngestEventService {
 
         eventStore.save(event);
         queuePublisher.publishEventId(eventId);
+
+        log.info("event_ingested eventId={} correlationId={} source={} producer={} originalType={} status={}",
+                event.getEventId(),
+                event.getCorrelationId(),
+                event.getSource(),
+                event.getProducer(),
+                event.getOriginalType(),
+                event.getStatus());
 
         return eventId;
     }
