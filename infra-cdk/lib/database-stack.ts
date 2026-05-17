@@ -22,10 +22,6 @@ export class DatabaseStack extends cdk.Stack {
         name: AppConfig.eventsTablePartitionKey,
         type: dynamodb.AttributeType.STRING,
       },
-      sortKey: {
-        name: AppConfig.eventsTableSortKey,
-        type: dynamodb.AttributeType.STRING,
-      },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy:
         envConfig.removalPolicy === 'DESTROY'

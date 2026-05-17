@@ -66,6 +66,7 @@ public class DynamoDbEventStore implements EventStore {
         item.put("status", AttributeValue.builder().s(event.getStatus().name()).build());
         item.put("attempts", AttributeValue.builder().n(String.valueOf(event.getAttempts())).build());
         item.put("createdAt", AttributeValue.builder().s(event.getCreatedAt().toString()).build());
+        item.put("receivedAt", AttributeValue.builder().s(event.getCreatedAt().toString()).build());
         item.put("updatedAt", AttributeValue.builder().s(event.getUpdatedAt().toString()).build());
 
         if (event.getClassification() != null) {
