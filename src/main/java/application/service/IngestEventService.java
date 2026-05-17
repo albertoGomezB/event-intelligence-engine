@@ -1,4 +1,4 @@
-package application;
+package application.service;
 
 import application.ports.EventStore;
 import application.ports.QueuePublisher;

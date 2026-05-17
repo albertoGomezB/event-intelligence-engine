@@ -1,21 +1,21 @@
 package api;
 
-import application.IngestEventService;
+import application.service.IngestEventService;
+import application.service.GetEventService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/v1/events")
-public class EventIngestController {
+public class EventController {
 
     private final IngestEventService ingestEventService;
+    private final GetEventService getEventService;
 
-    public EventIngestController(IngestEventService ingestEventService) {
+    public EventController(IngestEventService ingestEventService, GetEventService getEventService) {
         this.ingestEventService = ingestEventService;
+        this.getEventService = getEventService;
     }
 
     @PostMapping
@@ -31,5 +31,12 @@ public class EventIngestController {
 
         return ResponseEntity.accepted()
                 .body(new IngestResponse(eventId));
+    }
+
+    @GetMapping("/{eventId}")
+    public ResponseEntity<EventResponse> getEvent(@PathVariable String eventId) {
+        return getEventService.findById(eventId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }
