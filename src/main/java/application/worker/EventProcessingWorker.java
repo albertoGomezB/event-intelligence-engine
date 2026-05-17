@@ -36,16 +36,12 @@ public class EventProcessingWorker {
     }
 
     /**
-     * Processes a single event identified by eventId.
-     * The method is designed to be idempotent and resilient to non-deterministic behavior of the AI classifier.
-     * The processing flow includes:
-     * 1. Loading the event from persistence.
-     * 2. Checking for idempotency (ignoring already completed or failed events).
-     * 3. Transitioning the event to PROCESSING state before calling the AI classifier.
-     * 4. Handling the AI classifier response:
-     *   - On success: transition to COMPLETED or REVIEW_REQUIRED and save the result.
-     *   - On temporary failure: register the failure, and if retries are available, re-queue the event for another attempt.
-     *   - On permanent failure: transition to FAILED.
+     * Processes an event by its ID. It retrieves the event from the store, checks if it has already been processed,
+     * and if not, it attempts to classify the event using the AI classifier. The method
+     * handles retries for temporary failures and updates the event status accordingly.
+     *
+     * @param eventId the ID of the event to process
+     *
      */
     public void process(String eventId) {
 
