@@ -11,7 +11,6 @@ public class InMemoryEventStore implements EventStore {
 
     private final Map<String, IncomingEvent> storage = new ConcurrentHashMap<>();
 
-
     @Override
     public void save(IncomingEvent event) {
         storage.put(event.getEventId(), event);
