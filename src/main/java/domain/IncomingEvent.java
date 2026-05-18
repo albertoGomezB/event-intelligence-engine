@@ -67,6 +67,30 @@ public class IncomingEvent {
         );
     }
 
+    /**
+     * Rehydrates an event that was previously persisted by an infrastructure adapter.
+     *
+     * <p>This factory is intentionally separate from {@link #createNewEvent(String, String, String, String, String, String)}.
+     * Creating a new event initializes lifecycle fields such as status, attempts and timestamps. Restoring an event must
+     * preserve the durable state already stored in the persistence layer, including the current status, retry count,
+     * timestamps and classification result.</p>
+     *
+     * <p>No lifecycle transition is executed here. The method reconstructs the aggregate exactly as it was persisted,
+     * while still enforcing basic domain invariants to avoid silently loading corrupt state.</p>
+     *
+     * @param eventId unique event identifier
+     * @param correlationId correlation identifier used for tracing the business flow
+     * @param source source system or channel that originated the event
+     * @param producer upstream producer that emitted the event
+     * @param originalType original event type received from the producer
+     * @param payloadJson original event payload serialized as JSON
+     * @param status persisted lifecycle status
+     * @param attempts number of failed processing attempts already registered
+     * @param createdAt original event creation timestamp
+     * @param updatedAt timestamp of the latest lifecycle update
+     * @param classification persisted classification result, required for classified terminal states
+     * @return restored incoming event with its persisted lifecycle state
+     */
     public static IncomingEvent restore(
             String eventId,
             String correlationId,
