@@ -24,6 +24,6 @@ public class SqsQueuePublisher implements QueuePublisher {
                 .queueUrl(queueUrl)
                 .messageBody(eventId)
                 .build());
-        log.info("event_published_sqs eventId={} queueUrl={}", eventId, queueUrl);
+        log.info("event_published_sqs eventId={} destination=sqs", eventId);
     }
 }
