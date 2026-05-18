@@ -67,6 +67,56 @@ public class IncomingEvent {
         );
     }
 
+    public static IncomingEvent restore(
+            String eventId,
+            String correlationId,
+            String source,
+            String producer,
+            String originalType,
+            String payloadJson,
+            EventStatus status,
+            int attempts,
+            Instant createdAt,
+            Instant updatedAt,
+            ClassificationResult classification) {
+
+        if(eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("Event ID cannot be null or blank");
+        }
+        if (payloadJson == null) {
+            throw new IllegalArgumentException("Payload JSON cannot be null");
+        }
+        if (status == null) {
+            throw new IllegalArgumentException("Event status cannot be null");
+        }
+        if (attempts < 0) {
+            throw new IllegalArgumentException("Attempts cannot be negative");
+        }
+        if (createdAt == null) {
+            throw new IllegalArgumentException("Created timestamp cannot be null");
+        }
+        if (updatedAt == null) {
+            throw new IllegalArgumentException("Updated timestamp cannot be null");
+        }
+        if ((status == EventStatus.COMPLETED || status == EventStatus.REVIEW_REQUIRED) && classification == null) {
+            throw new IllegalArgumentException("Classification result is required for classified terminal events");
+        }
+
+        return new IncomingEvent(
+                eventId,
+                correlationId,
+                source,
+                producer,
+                originalType,
+                payloadJson,
+                status,
+                attempts,
+                createdAt,
+                updatedAt,
+                classification
+        );
+    }
+
     /**
      * Transition the event status to PROCESSING.
      * This method should only be called when the event is in RECEIVED status.
