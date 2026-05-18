@@ -9,6 +9,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -81,41 +82,44 @@ public class DynamoDbEventStore implements EventStore {
     }
 
     private IncomingEvent fromItem(Map<String, AttributeValue> item) {
-        String eventId = item.get(EVENT_ID).s();
-        String correlationId = getString(item, "correlationId");
-        String source = getString(item, "source");
-        String producer = getString(item, "producer");
-        String originalType = getString(item, "originalType");
-        String payloadJson = item.get("payloadJson").s();
+        EventStatus status = EventStatus.valueOf(getRequiredString(item, "status"));
+        ClassificationResult classification = toClassificationResult(item);
 
-        IncomingEvent event = IncomingEvent.createNewEvent(eventId, correlationId, source, producer, originalType, payloadJson);
+        return IncomingEvent.restore(
+                getRequiredString(item, EVENT_ID),
+                getString(item, "correlationId"),
+                getString(item, "source"),
+                getString(item, "producer"),
+                getString(item, "originalType"),
+                getRequiredString(item, "payloadJson"),
+                status,
+                getInt(item, "attempts"),
+                getInstant(item, "createdAt"),
+                getInstant(item, "updatedAt"),
+                classification
+        );
+    }
 
-        // Best-effort state restoration with current domain API constraints.
-        EventStatus targetStatus = EventStatus.valueOf(item.get("status").s());
-        if (targetStatus == EventStatus.PROCESSING || targetStatus == EventStatus.COMPLETED || targetStatus == EventStatus.REVIEW_REQUIRED || targetStatus == EventStatus.FAILED) {
-            event.startProcessing();
+    private ClassificationResult toClassificationResult(Map<String, AttributeValue> item) {
+        if (!item.containsKey("classificationCategory")) {
+            return null;
         }
 
-        if (targetStatus == EventStatus.COMPLETED || targetStatus == EventStatus.REVIEW_REQUIRED) {
-            ClassificationResult result = new ClassificationResult(
-                    getString(item, "classificationCategory"),
-                    getString(item, "classificationSubcategory"),
-                    getDouble(item, "classificationConfidence"),
-                    getString(item, "classificationModelUsed"),
-                    getString(item, "classificationPromptVersion")
-            );
-            if (targetStatus == EventStatus.COMPLETED) {
-                event.complete(result);
-            } else {
-                event.markForReview(result);
-            }
-        }
+        return new ClassificationResult(
+                getString(item, "classificationCategory"),
+                getString(item, "classificationSubcategory"),
+                getDouble(item, "classificationConfidence"),
+                getString(item, "classificationModelUsed"),
+                getString(item, "classificationPromptVersion")
+        );
+    }
 
-        if (targetStatus == EventStatus.FAILED) {
-            event.registerFailure(1);
+    private static String getRequiredString(Map<String, AttributeValue> item, String key) {
+        AttributeValue v = item.get(key);
+        if (v == null || v.s() == null) {
+            throw new IllegalStateException("Missing required DynamoDB attribute: " + key);
         }
-
-        return event;
+        return v.s();
     }
 
     private static String getString(Map<String, AttributeValue> item, String key) {
@@ -123,9 +127,18 @@ public class DynamoDbEventStore implements EventStore {
         return v == null ? "" : v.s();
     }
 
+    private static int getInt(Map<String, AttributeValue> item, String key) {
+        AttributeValue v = item.get(key);
+        return v == null ? 0 : Integer.parseInt(v.n());
+    }
+
     private static double getDouble(Map<String, AttributeValue> item, String key) {
         AttributeValue v = item.get(key);
         return v == null ? 0.0 : Double.parseDouble(v.n());
+    }
+
+    private static Instant getInstant(Map<String, AttributeValue> item, String key) {
+        return Instant.parse(getRequiredString(item, key));
     }
 
     private static String nullToEmpty(String value) {
