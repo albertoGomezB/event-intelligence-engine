@@ -57,7 +57,7 @@ class EventProcessingWorkerTest {
         worker.process("event-1");
 
         IncomingEvent storedEvent = eventStore.findById("event-1").orElseThrow();
-        assertThat(storedEvent.getStatus()).isEqualTo(EventStatus.REVIEW_REQUIRED);
+        assertThat(storedEvent.getStatus()).isEqualTo(EventStatus.HUMAN_REVIEW_REQUIRED);
         assertThat(storedEvent.getClassification().confidence()).isEqualTo(0.50);
     }
 
@@ -77,7 +77,7 @@ class EventProcessingWorkerTest {
         worker.process("event-1");
 
         IncomingEvent storedEvent = eventStore.findById("event-1").orElseThrow();
-        assertThat(storedEvent.getStatus()).isEqualTo(EventStatus.REVIEW_REQUIRED);
+        assertThat(storedEvent.getStatus()).isEqualTo(EventStatus.HUMAN_REVIEW_REQUIRED);
         assertThat(storedEvent.getClassification().category()).isEqualTo("UNSUPPORTED");
     }
 

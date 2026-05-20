@@ -6,11 +6,11 @@ public class BedrockClassificationPromptBuilder {
 
     public String build(ClassificationRequest request) {
         return """
-                You are a deterministic banking event classifier.
+                You are a strict banking event classifier.
 
                 Your task is to classify a banking domain event into exactly one category and one subcategory from the allowed taxonomy below.
 
-                You must return only valid JSON.
+                You must return valid JSON.
                 Do not include markdown.
                 Do not include explanations.
                 Do not include comments.
@@ -54,24 +54,34 @@ public class BedrockClassificationPromptBuilder {
                 - INFORMATION_REQUEST
                 - OTHER_SUPPORT
 
+                UNCLASSIFIED:
+                - AMBIGUOUS_EVENT
+                - INSUFFICIENT_EVIDENCE
+                - OUT_OF_SCOPE
+
                 Classification rules:
-                - Choose the most specific subcategory allowed by the taxonomy.
-                - If the event is clear, use a specific subcategory.
-                - If the category is clear but the subcategory is ambiguous, use the corresponding OTHER_* subcategory.
-                - If the whole event is ambiguous, choose the closest category and lower the confidence.
+                - Choose a business category only when the event contains enough evidence.
+                - Choose the most specific subcategory only when it is clearly supported by the event.
+                - If the category is clear but the subcategory is not clear, use the corresponding OTHER_* subcategory.
+                - If the event could belong to multiple categories, return UNCLASSIFIED with subcategory AMBIGUOUS_EVENT.
+                - If the event does not contain enough information to classify safely, return UNCLASSIFIED with subcategory INSUFFICIENT_EVIDENCE.
+                - If the event is outside the supported banking taxonomy, return UNCLASSIFIED with subcategory OUT_OF_SCOPE.
+                - Never force a business classification when the evidence is weak.
                 - Never create a new category.
                 - Never create a new subcategory.
                 - The confidence value must be between 0.0 and 1.0.
 
-                Confidence scale:
-                - 0.90 to 1.00: very clear classification with strong evidence.
-                - 0.70 to 0.89: likely classification, but some details are missing.
-                - 0.50 to 0.69: ambiguous event with limited evidence.
-                - Below 0.50: weak evidence or highly uncertain classification.
+                Confidence rules:
+                - Do not use 0.95 as a default confidence value.
+                - Use 0.90 to 1.00 only when source, producer, originalType and payload clearly support the same classification.
+                - Use 0.70 to 0.89 when the classification is likely, but some details are missing.
+                - Use 0.50 to 0.69 when the event is ambiguous or has limited evidence.
+                - Use below 0.50 when the event has weak evidence or is outside the supported taxonomy.
+                - UNCLASSIFIED results should usually have confidence below 0.70.
 
                 Response schema:
                 {
-                  "category": "PAYMENTS | CARDS | FRAUD | LENDING | CUSTOMER_SUPPORT",
+                  "category": "PAYMENTS | CARDS | FRAUD | LENDING | CUSTOMER_SUPPORT | UNCLASSIFIED",
                   "subcategory": "one allowed subcategory from the selected category",
                   "confidence": 0.0
                 }

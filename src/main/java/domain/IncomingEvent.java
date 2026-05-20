@@ -14,13 +14,14 @@ public class IncomingEvent {
     private String originalType;
     private String payloadJson;
     private EventStatus status;
+    private String reviewReason;
     private int attempts;
     private Instant createdAt;
     private Instant updatedAt;
     private ClassificationResult classification;
 
     private IncomingEvent(String eventId, String correlationId, String source, String producer,
-                          String originalType, String payloadJson, EventStatus status,
+                          String originalType, String payloadJson, EventStatus status, String reviewReason,
                           int attempts, Instant createdAt, Instant updatedAt,
                           ClassificationResult classification) {
         this.eventId = eventId;
@@ -30,6 +31,7 @@ public class IncomingEvent {
         this.originalType = originalType;
         this.payloadJson = payloadJson;
         this.status = status;
+        this.reviewReason = reviewReason;
         this.attempts = attempts;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -60,6 +62,7 @@ public class IncomingEvent {
                 originalType,
                 payloadJson,
                 EventStatus.RECEIVED,
+                null,
                 0,
                 now,
                 now,
@@ -85,7 +88,7 @@ public class IncomingEvent {
      * @param originalType original event type received from the producer
      * @param payloadJson original event payload serialized as JSON
      * @param status persisted lifecycle status
-     * @param attempts number of failed processing attempts already registered
+     * @param attempts number of processing attempts already registered
      * @param createdAt original event creation timestamp
      * @param updatedAt timestamp of the latest lifecycle update
      * @param classification persisted classification result, required for classified terminal states
@@ -99,6 +102,7 @@ public class IncomingEvent {
             String originalType,
             String payloadJson,
             EventStatus status,
+            String reviewReason,
             int attempts,
             Instant createdAt,
             Instant updatedAt,
@@ -122,8 +126,13 @@ public class IncomingEvent {
         if (updatedAt == null) {
             throw new IllegalArgumentException("Updated timestamp cannot be null");
         }
-        if ((status == EventStatus.COMPLETED || status == EventStatus.REVIEW_REQUIRED) && classification == null) {
+        if ((status == EventStatus.COMPLETED || status == EventStatus.HUMAN_REVIEW_REQUIRED) && classification == null) {
             throw new IllegalArgumentException("Classification result is required for classified terminal events");
+        }
+        if (status == EventStatus.HUMAN_REVIEW_REQUIRED &&
+                (reviewReason == null || reviewReason.isBlank())) {
+            throw new IllegalArgumentException(
+                    "Review reason is required for review events");
         }
 
         return new IncomingEvent(
@@ -134,6 +143,7 @@ public class IncomingEvent {
                 originalType,
                 payloadJson,
                 status,
+                reviewReason,
                 attempts,
                 createdAt,
                 updatedAt,
@@ -149,11 +159,13 @@ public class IncomingEvent {
     public void startProcessing() {
         if (this.status == EventStatus.COMPLETED ||
                 this.status == EventStatus.FAILED ||
-                this.status == EventStatus.REVIEW_REQUIRED) {
+                this.status == EventStatus.HUMAN_REVIEW_REQUIRED) {
             throw new IllegalStateException("Cannot process terminal event");
         }
+        this.attempts++;
         status = EventStatus.PROCESSING;
         updatedAt = Instant.now();
+
     }
 
     /**
@@ -181,7 +193,7 @@ public class IncomingEvent {
      *
      * @param result classification output produced by the classifier
      */
-    public void markForReview(ClassificationResult result) {
+    public void markForReview(ClassificationResult result, String reviewReason) {
         if(result == null) {
             throw new IllegalArgumentException("The result cannot be null");
         }
@@ -189,26 +201,34 @@ public class IncomingEvent {
             throw new IllegalStateException("The status should be PROCESSING");
         }
         this.classification = result;
+        this.reviewReason = reviewReason;
         updatedAt = Instant.now();
-        this.status = EventStatus.REVIEW_REQUIRED;
+        this.status = EventStatus.HUMAN_REVIEW_REQUIRED;
     }
 
     /**
-     * Register a failure for the event processing. This method should only be called when the event is in PROCESSING status.
-     * The status will be updated to FAILED if the number of attempts exceeds the maxRetries.
-     * The attempts count will be incremented by 1 after this method is called.
-     * The status will remain PROCESSING if the number of attempts does not exceed the maxRetries.
-     * The updatedAt timestamp will be updated to the current time after this method is called.
-     * @param maxRetries the maximum number of retries allowed before marking the event as FAILED
+     * Registers a processing failure for an event currently in PROCESSING state.
      *
-     * @return true if the event is marked as FAILED, false if the event remains in PROCESSING
+     * <p>Processing attempts are incremented when processing starts via
+     * {@link #startProcessing()}, not when the failure is registered.</p>
+     *
+     * <p>If the number of processing attempts reaches the configured retry limit,
+     * the event transitions to FAILED status. Otherwise, the event remains eligible
+     * for retry processing.</p>
+     *
+     * <p>The updatedAt timestamp is refreshed when the failure is registered.</p>
+     *
+     * @param maxRetries maximum number of processing attempts allowed
+     *                   before marking the event as FAILED
+     *
+     * @return true if the event can still be retried, false if the event
+     *         reached the retry limit and was marked as FAILED
      */
     public boolean registerFailure (int maxRetries) {
 
         if (this.status != EventStatus.PROCESSING) {
             throw new IllegalStateException("Cannot register failure if event is not PROCESSING");
         }
-        this.attempts++;
         this.updatedAt = Instant.now();
 
         if (this.attempts >= maxRetries) {

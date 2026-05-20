@@ -58,7 +58,7 @@ public class EventProcessingWorker {
         // If event already reached a terminal state, ignore duplicated delivery.
         if (event.getStatus() == EventStatus.COMPLETED ||
                 event.getStatus() == EventStatus.FAILED ||
-                event.getStatus() == EventStatus.REVIEW_REQUIRED) {
+                event.getStatus() == EventStatus.HUMAN_REVIEW_REQUIRED) {
             log.info("event_ignored_terminal_state eventId={} correlationId={} status={}",
                     event.getEventId(), event.getCorrelationId(), event.getStatus());
             return;
@@ -102,7 +102,7 @@ public class EventProcessingWorker {
                         ? "CLASSIFICATION_NOT_ALLOWED"
                         : "LOW_CONFIDENCE";
 
-                event.markForReview(result);
+                event.markForReview(result, reason);
                 eventStore.save(event);
 
                 log.info("event_review_required eventId={} correlationId={} reason={} category={} subcategory={} confidence={} status={}",
