@@ -3,6 +3,10 @@ package infra.ai.bedrock;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import domain.ClassificationResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,24 +61,9 @@ class BedrockClassificationResponseParserTest {
         assertThat(result.confidence()).isEqualTo(0.91);
     }
 
-    @Test
-    void shouldRejectBlankResponse() {
-        assertThatThrownBy(() -> parser.parse(
-                "",
-                "amazon.nova-micro-v1:0",
-                "banking-classifier-v1"
-        )).isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void shouldRejectMissingCategory() {
-        String rawResponse = """
-                {
-                  "subcategory": "TRANSFER",
-                  "confidence": 0.95
-                }
-                """;
-
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidResponses")
+    void shouldRejectInvalidClassificationResponses(String testCase, String rawResponse) {
         assertThatThrownBy(() -> parser.parse(
                 rawResponse,
                 "amazon.nova-micro-v1:0",
@@ -82,53 +71,64 @@ class BedrockClassificationResponseParserTest {
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
-    @Test
-    void shouldRejectMissingSubcategory() {
-        String rawResponse = """
-                {
-                  "category": "PAYMENTS",
-                  "confidence": 0.95
-                }
-                """;
-
-        assertThatThrownBy(() -> parser.parse(
-                rawResponse,
-                "amazon.nova-micro-v1:0",
-                "banking-classifier-v1"
-        )).isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void shouldRejectConfidenceOutsideRange() {
-        String rawResponse = """
-                {
-                  "category": "PAYMENTS",
-                  "subcategory": "TRANSFER",
-                  "confidence": 1.50
-                }
-                """;
-
-        assertThatThrownBy(() -> parser.parse(
-                rawResponse,
-                "amazon.nova-micro-v1:0",
-                "banking-classifier-v1"
-        )).isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void shouldRejectNonNumericConfidence() {
-        String rawResponse = """
-                {
-                  "category": "PAYMENTS",
-                  "subcategory": "TRANSFER",
-                  "confidence": "HIGH"
-                }
-                """;
-
-        assertThatThrownBy(() -> parser.parse(
-                rawResponse,
-                "amazon.nova-micro-v1:0",
-                "banking-classifier-v1"
-        )).isInstanceOf(IllegalArgumentException.class);
+    private static Stream<org.junit.jupiter.params.provider.Arguments> invalidResponses() {
+        return Stream.of(
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "blank response",
+                        ""
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "missing json object",
+                        "Here is the classification but no JSON"
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "missing category",
+                        """
+                        {
+                          "subcategory": "TRANSFER",
+                          "confidence": 0.95
+                        }
+                        """
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "missing subcategory",
+                        """
+                        {
+                          "category": "PAYMENTS",
+                          "confidence": 0.95
+                        }
+                        """
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "confidence above valid range",
+                        """
+                        {
+                          "category": "PAYMENTS",
+                          "subcategory": "TRANSFER",
+                          "confidence": 1.50
+                        }
+                        """
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "confidence below valid range",
+                        """
+                        {
+                          "category": "PAYMENTS",
+                          "subcategory": "TRANSFER",
+                          "confidence": -0.10
+                        }
+                        """
+                ),
+                org.junit.jupiter.params.provider.Arguments.of(
+                        "non numeric confidence",
+                        """
+                        {
+                          "category": "PAYMENTS",
+                          "subcategory": "TRANSFER",
+                          "confidence": "HIGH"
+                        }
+                        """
+                )
+        );
     }
 }
