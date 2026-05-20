@@ -6,6 +6,7 @@ import application.ports.EventStore;
 import application.ports.QueuePublisher;
 import domain.ClassificationResponse;
 import domain.ClassificationResult;
+import domain.ClassificationRequest;
 import domain.EventStatus;
 import domain.IncomingEvent;
 import org.slf4j.Logger;
@@ -70,7 +71,14 @@ public class EventProcessingWorker {
                 event.getEventId(), event.getCorrelationId(), event.getAttempts(), event.getStatus());
 
         // 4. Call AI classifier (non-deterministic dependency)
-        ClassificationResponse classificationResponse = classifier.classify(event.getPayloadJson());
+        ClassificationRequest classificationRequest = new ClassificationRequest(
+                event.getSource(),
+                event.getProducer(),
+                event.getOriginalType(),
+                event.getPayloadJson()
+        );
+
+        ClassificationResponse classificationResponse = classifier.classify(classificationRequest);
 
         // 5. Successful classification
         if (classificationResponse.success()) {
