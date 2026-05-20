@@ -4,5 +4,5 @@ public interface ClassificationPolicy {
 
     boolean requiresHumanReview(double confidence);
 
-    boolean isCategoryAllowed(String category);
+    boolean isClassificationAllowed(String category, String subcategory);
 }

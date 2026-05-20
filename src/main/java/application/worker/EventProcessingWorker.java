@@ -83,22 +83,41 @@ public class EventProcessingWorker {
                         event.getEventId(), event.getCorrelationId(), event.getStatus());
                 return;
             }
-            boolean categoryNotAllowed = !classificationPolicy.isCategoryAllowed(result.category());
+            boolean classificationNotAllowed = !classificationPolicy.isClassificationAllowed(
+                    result.category(),
+                    result.subcategory());
+
             boolean lowConfidence = classificationPolicy.requiresHumanReview(result.confidence());
 
-            if (categoryNotAllowed || lowConfidence) {
-                String reason = categoryNotAllowed ? "CATEGORY_NOT_ALLOWED" : "LOW_CONFIDENCE";
+            if (classificationNotAllowed || lowConfidence) {
+                String reason = classificationNotAllowed
+                        ? "CLASSIFICATION_NOT_ALLOWED"
+                        : "LOW_CONFIDENCE";
+
                 event.markForReview(result);
                 eventStore.save(event);
-                log.info("event_review_required eventId={} correlationId={} reason={} category={} confidence={} status={}",
-                        event.getEventId(), event.getCorrelationId(), reason, result.category(),
-                        result.confidence(), event.getStatus());
+
+                log.info("event_review_required eventId={} correlationId={} reason={} category={} subcategory={} confidence={} status={}",
+                        event.getEventId(),
+                        event.getCorrelationId(),
+                        reason,
+                        result.category(),
+                        result.subcategory(),
+                        result.confidence(),
+                        event.getStatus());
+
                 return;
             }
             event.complete(result);
             eventStore.save(event);
-            log.info("event_completed eventId={} correlationId={} category={} confidence={} status={}",
-                    event.getEventId(), event.getCorrelationId(), result.category(), result.confidence(), event.getStatus());
+            log.info("event_completed eventId={} correlationId={} category={} subcategory={} confidence={} status={}",
+                    event.getEventId(),
+                    event.getCorrelationId(),
+                    result.category(),
+                    result.subcategory(),
+                    result.confidence(),
+                    event.getStatus());
+
             return;
         }
 
