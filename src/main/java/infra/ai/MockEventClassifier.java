@@ -1,12 +1,13 @@
 package infra.ai;
 
 import application.ports.EventClassifier;
+import domain.ClassificationRequest;
 import domain.ClassificationResponse;
 import domain.ClassificationResult;
 
 public class MockEventClassifier implements EventClassifier
 {
-    public ClassificationResponse classify(String payloadJson) {
+    public ClassificationResponse classify(ClassificationRequest request) {
         return new ClassificationResponse(
                 true,
                 false,
