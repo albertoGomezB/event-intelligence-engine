@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import domain.ClassificationResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.stream.Stream;
@@ -71,17 +72,17 @@ class BedrockClassificationResponseParserTest {
         )).isInstanceOf(IllegalArgumentException.class);
     }
 
-    private static Stream<org.junit.jupiter.params.provider.Arguments> invalidResponses() {
+    private static Stream<Arguments> invalidResponses() {
         return Stream.of(
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "blank response",
                         ""
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "missing json object",
                         "Here is the classification but no JSON"
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "missing category",
                         """
                         {
@@ -90,7 +91,7 @@ class BedrockClassificationResponseParserTest {
                         }
                         """
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "missing subcategory",
                         """
                         {
@@ -99,7 +100,7 @@ class BedrockClassificationResponseParserTest {
                         }
                         """
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "confidence above valid range",
                         """
                         {
@@ -109,7 +110,7 @@ class BedrockClassificationResponseParserTest {
                         }
                         """
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "confidence below valid range",
                         """
                         {
@@ -119,7 +120,7 @@ class BedrockClassificationResponseParserTest {
                         }
                         """
                 ),
-                org.junit.jupiter.params.provider.Arguments.of(
+                Arguments.of(
                         "non numeric confidence",
                         """
                         {
