@@ -24,17 +24,22 @@ class BankingClassificationPolicyTest {
     }
 
     @Test
-    void shouldAllowSupportedBankingCategory() {
-        assertThat(policy.isCategoryAllowed("PAYMENTS")).isTrue();
+    void shouldAllowSupportedBankingClassification() {
+        assertThat(policy.isClassificationAllowed("PAYMENTS", "DIRECT_DEBIT")).isTrue();
     }
 
     @Test
-    void shouldRejectUnsupportedCategory() {
-        assertThat(policy.isCategoryAllowed("CRYPTO")).isFalse();
+    void shouldRejectUnsupportedSubcategoryForCategory() {
+        assertThat(policy.isClassificationAllowed("UNKNOWN_CATEGORY", "DIRECT_DEBIT")).isFalse();
     }
 
     @Test
     void shouldRejectNullCategory() {
-        assertThat(policy.isCategoryAllowed(null)).isFalse();
+        assertThat(policy.isClassificationAllowed(null, null)).isFalse();
+    }
+
+    @Test
+    void shouldRejectNullSubcategory() {
+        assertThat(policy.isClassificationAllowed("PAYMENTS", null)).isFalse();
     }
 }

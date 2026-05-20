@@ -37,6 +37,7 @@ class EventProcessingWorkerTest {
         IncomingEvent storedEvent = eventStore.findById("event-1").orElseThrow();
         assertThat(storedEvent.getStatus()).isEqualTo(EventStatus.COMPLETED);
         assertThat(storedEvent.getClassification().category()).isEqualTo("PAYMENTS");
+        assertThat(storedEvent.getClassification().subcategory()).isEqualTo("DIRECT_DEBIT");
         assertThat(queuePublisher.publishedEventIds).isEmpty();
     }
 
@@ -160,7 +161,7 @@ class EventProcessingWorkerTest {
     }
 
     private static ClassificationResult successfulResult(String category, double confidence) {
-        return new ClassificationResult(category, "TRANSFER", confidence, "test-classifier", "prompt-test");
+        return new ClassificationResult(category, "DIRECT_DEBIT", confidence, "test-classifier", "prompt-test");
     }
 
     private static EventClassifier classifierReturning(ClassificationResult result) {
@@ -177,11 +178,11 @@ class EventProcessingWorkerTest {
 
     private static class FixedClassificationPolicy implements ClassificationPolicy {
 
-        private final boolean categoryAllowed;
+        private final boolean classificationAllowed;
         private final boolean requiresHumanReview;
 
-        private FixedClassificationPolicy(boolean categoryAllowed, boolean requiresHumanReview) {
-            this.categoryAllowed = categoryAllowed;
+        private FixedClassificationPolicy(boolean classificationAllowed, boolean requiresHumanReview) {
+            this.classificationAllowed = classificationAllowed;
             this.requiresHumanReview = requiresHumanReview;
         }
 
@@ -191,8 +192,8 @@ class EventProcessingWorkerTest {
         }
 
         @Override
-        public boolean isCategoryAllowed(String category) {
-            return categoryAllowed;
+        public boolean isClassificationAllowed(String category, String subcategory) {
+            return classificationAllowed;
         }
     }
 
